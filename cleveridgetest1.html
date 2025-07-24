@@ -42,6 +42,7 @@
 
 <!-- 📷 Kamera -->
 <video id="kamera" width="365" height="365" autoplay muted></video>
+<button id="kameraButton" onclick="kameraUmschalten()" style="display:block;margin:10px auto;">📴 Kamera ausschalten</button>
 
 <!-- 🧃 Karussell -->
 <div class="carousel-wrapper">
@@ -69,16 +70,37 @@
 <script>
   const carousel = document.getElementById("carousel");
   const video = document.getElementById("kamera");
+  const kameraButton = document.getElementById("kameraButton");
   const eliminado = new Set();
-  const notizen = {}; // speichern Notizen
+  const notizen = {};
+  let kameraStream = null;
+  let kameraAktiv = true;
 
-  // 🎥 Kamera aktivieren
   navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+    kameraStream = stream;
     video.srcObject = stream;
   });
 
+  function kameraUmschalten() {
+    if (kameraAktiv) {
+      kameraStream.getTracks().forEach(track => track.stop());
+      video.srcObject = null;
+      video.style.display = "none";
+      kameraButton.innerText = "📷 Kamera einschalten";
+    } else {
+      navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+        kameraStream = stream;
+        video.srcObject = stream;
+        video.style.display = "block";
+        kameraButton.innerText = "📴 Kamera ausschalten";
+      });
+    }
+    kameraAktiv = !kameraAktiv;
+  }
+
   cocoSsd.load().then(model => {
     setInterval(() => {
+      if (!kameraAktiv) return;
       model.detect(video).then(vorhersagen => {
         vorhersagen.forEach(objekt => {
           if (!document.getElementById(objekt.class) && !eliminado.has(objekt.class)) {
