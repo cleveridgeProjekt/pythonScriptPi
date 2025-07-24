@@ -1,51 +1,37 @@
 from flask import Flask, render_template, redirect, url_for
-import cv2
 import tensorflow as tf
+import tensorflow_hub as hub
 import numpy as np
-from datetime import datetime
+import cv2
 import os
 
 app = Flask(__name__)
 
-# Load pre-trained model (MobileNetV2)
-model = tf.keras.applications.MobileNetV2(weights='imagenet')
-decode_predictions = tf.keras.applications.mobilenet_v2.decode_predictions
+# Load Food101 classification model from TensorFlow Hub
+model = hub.load("https://tfhub.dev/google/food101/mobilenet_v2_100_224/classification/1")
 input_size = (224, 224)
 
-result_label = ""
+# Load class labels
+with open("food_labels.txt", "r") as f:
+    food_labels = [line.strip() for line in f.readlines()]
 
-def take_and_classify_photo():
-    global result_label
+latest_prediction = {}
+
+def take_photo_and_classify():
+    global latest_prediction
 
     cap = cv2.VideoCapture(0)
     ret, frame = cap.read()
-    if ret:
-        # Save photo
-        filepath = "static/latest.jpg"
-        cv2.imwrite(filepath, frame)
-
-        # Preprocess for model
-        img = cv2.resize(frame, input_size)
-        img_array = tf.keras.preprocessing.image.img_to_array(img)
-        img_array = np.expand_dims(img_array, axis=0)
-        img_array = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-
-        # Predict
-        predictions = model.predict(img_array)
-        decoded = decode_predictions(predictions, top=1)[0][0]
-        result_label = f"{decoded[1]} ({decoded[2]*100:.2f}%)"
-    else:
-        result_label = "Camera Error"
     cap.release()
 
-@app.route('/')
-def index():
-    return render_template('index.html', result=result_label)
+    if not ret:
+        latest_prediction = {"label": "Camera Error", "confidence": 0.0}
+        return
 
-@app.route('/snap', methods=['POST'])
-def snap():
-    take_and_classify_photo()
-    return redirect(url_for('index'))
+    # Save captured image
+    filepath = "static/latest.jpg"
+    cv2.imwrite(filepath, frame)
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Resize & normalize image
+    img = cv2.resize(frame, input_size)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
