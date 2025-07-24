@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cleveridge – Smarter Kühlschrank</title>
+  <style>
+    body { font-family: Arial; margin: 0; background: #f3f3f3; }
+    header { text-align: center; background: #0f4763; color: white; padding: 20px; }
+    nav { text-align: center; background: #ddd; padding: 10px; }
+    nav a { margin: 0 10px; text-decoration: none; color: #021722; }
+    .carousel-wrapper { display: flex; align-items: center; justify-content: center; overflow: hidden; margin: 20px auto; max-width: 700px; }
+    .carousel { display: flex; overflow-x: auto; scroll-behavior: smooth; scrollbar-width: none; }
+    .carousel::-webkit-scrollbar { display: none; }
+    .produkt-karte { flex: 0 0 auto; margin: 10px; text-align: center; cursor: pointer; border: 1px solid #ccc; padding: 8px; border-radius: 8px; background: #fff; }
+    .produkt-karte img { width: 150px; height: 150px; border-radius: 8px; }
+    .produkt-karte:hover { transform: scale(1.05); }
+    .carousel-pfeil { font-size: 28px; background: none; border: none; cursor: pointer; color: #004466; }
+    #auswahl li { background: #d4edda; margin: 5px; padding: 8px; border-radius: 4px; list-style: none; }
+    video { display: block; margin: 20px auto; border: 2px solid #3187b3; border-radius: 10px; }
+
+    #produktModal {
+      display: none; position: fixed; top: 20%; left: 50%; transform: translateX(-50%);
+      background: white; padding: 20px; border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2); z-index: 999;
+      width: 350px;
+    }
+    #closeModal { float: right; cursor: pointer; font-size: 18px; color: #999; }
+    #produktNotiz { width: 100%; margin-top: 10px; resize: vertical; }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>❄️ Cleveridge</h1>
+  <p>Dein smarter Kühlschrank: Produkterkennung, Einkaufliste, und mehr!</p>
+</header>
+
+<nav>
+  <a href="#">What's in your Fridge</a>
+</nav>
+
+<!-- 📷 Kamera -->
+<video id="kamera" width="365" height="365" autoplay muted></video>
+
+<!-- 🧃 Karussell -->
+<div class="carousel-wrapper">
+  <button class="carousel-pfeil" onclick="carouselScroll(-1)">⬅️</button>
+  <div class="carousel" id="carousel"></div>
+  <button class="carousel-pfeil" onclick="carouselScroll(1)">➡️</button>
+</div>
+
+<h3 style="text-align: center;">Ausgewählt:</h3>
+<ul id="auswahl" style="text-align: center;"></ul>
+
+<!-- 💬 Modal -->
+<div id="produktModal">
+  <span id="closeModal">❌</span>
+  <h2 id="produktTitel"></h2>
+  <p id="produktDetails"></p>
+  <textarea id="produktNotiz" placeholder="Notiz zum Produkt eingeben..." rows="4"></textarea>
+  <button onclick="speichereNotiz()">💾 Speichern</button>
+</div>
+
+<!-- TensorFlow.js und Coco SSD -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+<script>
+  const carousel = document.getElementById("carousel");
+  const video = document.getElementById("kamera");
+  const eliminado = new Set();
+  const notizen = {}; // speichern Notizen
+
+  // 🎥 Kamera aktivieren
+  navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+    video.srcObject = stream;
+  });
+
+  cocoSsd.load().then(model => {
+    setInterval(() => {
+      model.detect(video).then(vorhersagen => {
+        vorhersagen.forEach(objekt => {
+          if (!document.getElementById(objekt.class) && !eliminado.has(objekt.class)) {
+            const karte = document.createElement("div");
+            karte.className = "produkt-karte";
+            karte.id = objekt.class;
+            const prozent = (objekt.score * 100).toFixed(1);
+            karte.innerHTML = `
+              <img src="${bildAuswaehlen(objekt.class)}" alt="${objekt.class}" />
+              <p>${objekt.class}</p>
+              <p>🔍 Ähnlichkeit: ${prozent}%</p>
+              <button onclick="entferneProdukt('${objekt.class}')" style="margin-top:5px;">🗑️ Entfernen</button>
+            `;
+            karte.onclick = () => zeigeNaehrwerte(objekt.class);
+            carousel.appendChild(karte);
+          }
+        });
+      });
+    }, 2000);
+  });
+
+  function carouselScroll(richtung) {
+    carousel.scrollBy({ left: richtung * 180, behavior: 'smooth' });
+  }
+
+  document.getElementById("closeModal").onclick = () => {
+    document.getElementById("produktModal").style.display = "none";
+  };
+
+  function entferneProdukt(id) {
+    const element = document.getElementById(id);
+    if (element) {
+      carousel.removeChild(element);
+      eliminado.add(id);
+    }
+  }
+
+  function bildAuswaehlen(label) {
+    const bilder = {
+      pizza: "pizza.jpg",
+      apple: "apfel.jpg",
+      milk: "milch.jpg",
+      banana: "banane.jpg",
+      person: "person.jpg",
+      bottle: "wasser.jpg",
+      orange: "orange.jpg",
+      carrot: "carrot.jpg"
+    };
+    return bilder[label] || "default.jpg";
+  }
+
+  function zeigeNaehrwerte(produkt) {
+    document.getElementById("produktModal").style.display = "block";
+    document.getElementById("produktTitel").innerText = produkt;
+
+    const caducidad = produktHaltbarkeit(produkt);
+    const gespeicherteNotiz = notizen[produkt] || "";
+
+    document.getElementById("produktDetails").innerText = `🧊 Ablaufdatum: ${caducidad}`;
+    document.getElementById("produktNotiz").value = gespeicherteNotiz;
+  }
+
+  function speichereNotiz() {
+    const produkt = document.getElementById("produktTitel").innerText;
+    const text = document.getElementById("produktNotiz").value;
+    notizen[produkt] = text;
+  }
+
+  function produktHaltbarkeit(produkt) {
+    const daten = {
+      apple: "3 Wochen",
+      carrot: "1 Monat",
+      milk: "7 Tage",
+      banana: "5 Tage",
+      orange: "2 Wochen",
+      pizza: "4 Tage"
+    };
+    return daten[produkt] || "Unbekannt";
+  }
+</script>
+
+</body>
+</html>
