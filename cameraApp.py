@@ -1,37 +1,39 @@
-from flask import Flask, render_template, redirect, url_for
-import tensorflow as tf
-import tensorflow_hub as hub
-import numpy as np
+from flask import Flask, request, jsonify
 import cv2
+import time
 import os
 
 app = Flask(__name__)
 
-# Load Food101 classification model from TensorFlow Hub
-model = hub.load("https://tfhub.dev/google/food101/mobilenet_v2_100_224/classification/1")
-input_size = (224, 224)
+@app.route('/capture', methods=['POST'])
+def capture():
+    try:
+        # Initialize USB camera (usually device 0, adjust if needed)
+        cam = cv2.VideoCapture(0)
 
-# Load class labels
-with open("food_labels.txt", "r") as f:
-    food_labels = [line.strip() for line in f.readlines()]
+        if not cam.isOpened():
+            return jsonify({'status': 'error', 'message': 'Camera not accessible'}), 500
 
-latest_prediction = {}
+        # Allow camera to warm up
+        time.sleep(1)
 
-def take_photo_and_classify():
-    global latest_prediction
+        # Capture frame
+        ret, frame = cam.read()
+        cam.release()
 
-    cap = cv2.VideoCapture(0)
-    ret, frame = cap.read()
-    cap.release()
+        if not ret:
+            return jsonify({'status': 'error', 'message': 'Failed to capture image'}), 500
 
-    if not ret:
-        latest_prediction = {"label": "Camera Error", "confidence": 0.0}
-        return
+        # Save the image
+        timestamp = int(time.time())
+        filename = f"photo_{timestamp}.jpg"
+        cv2.imwrite(filename, frame)
 
-    # Save captured image
-    filepath = "static/latest.jpg"
-    cv2.imwrite(filepath, frame)
+        return jsonify({'status': 'success', 'filename': filename})
 
-    # Resize & normalize image
-    img = cv2.resize(frame, input_size)
-    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# Run Flask app on all interfaces (port 5000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
